@@ -3,9 +3,13 @@
 #include <Windows.h>
 #include <tuple>
 #include <string>
+#include <vector>
 
 CONST float SLEEP_DURATION_MS = 8;
+const int TARGETS_PER_ROW = 15;
+const int NUM_ROWS = 6;
 
+std::vector<int> death_signals(TARGETS_PER_ROW * NUM_ROWS, 0);
 HWND createWindow(LPCWSTR title, int x, int y, int w, int h);
 
 struct MetaData {
@@ -34,10 +38,8 @@ Ball createBall(std::pair<float, float> pos, std::pair<float, float> velocity) {
 	};
 }
 
-void spawnMessageBox()
-{
+void spawnMessageBox(){
 	MessageBox(0, L"temp", L"temp", MB_OK);
-
 	exit(0);
 }
 
@@ -56,7 +58,7 @@ HWND createWindow(LPCWSTR title, int x, int y, int w, int h)
 	return ret;
 }
 
-void update_ball_velocity(Ball* ball, HWND* paddle, MetaData meta) {
+void update_ball_velocity(Ball* ball, HWND* paddle, std::vector<HWND> targets, MetaData meta) {
 	const float TO_RADS = (3.14159 / 180.0);
 	const float MAX_ANGLE = 60 * (3.14159 / 180.0);
 	RECT ballRect;
@@ -84,25 +86,44 @@ void update_ball_velocity(Ball* ball, HWND* paddle, MetaData meta) {
 		return;
 	}
 
+	// COLLIDES WITH TARGET
+
+	for (int i = 0; i < targets.size(); i++) {
+		HWND target = targets[i];
+		RECT targetRect;
+		GetWindowRect(target, &targetRect);
+		bool collides_from_bottom = ballRect.top <= targetRect.bottom && ballRect.bottom >= targetRect.top;
+		bool collides_from_top = ballRect.bottom >= targetRect.top && ballRect.top <= targetRect.bottom;
+		if (collides_from_bottom || collides_from_top) {
+			ball->velocity.second *= -1;
+			//death_signals[i] = 1;
+			return;
+		}
+	}
+
 	// === COLLIDES WITH EDGE OF SCREEN ===
 	// LEFT
 	if (ballRect.left <= 0) {
 		ball->velocity.first *= -1;
+		return;
 	}
 
 	// RIGHT
 	if (ballRect.right >= meta.screenWidth) {
 		ball->velocity.first *= -1;
+		return;
 	}
 
 	// TOP
 	if (ballRect.top <= 0) {
 		ball->velocity.second *= -1;
+		return;
 	}
 
 	// Off bottom
 	if (ballRect.top >= meta.screenHeight -1) {
 		*ball = createBall(std::make_pair(700, 700), std::make_pair(-1000, 350));
+		return;
 	}
 	return;
 }
@@ -112,16 +133,36 @@ void update_ball_position(Ball* ball) {
 	ball->pos.second += ball->velocity.second * (SLEEP_DURATION_MS / 1000.0);
 }
 
+std::vector<HWND> create_targets(MetaData meta) {
+	const float PERCENTAGE_OF_SCREEN_HEIGHT = 0.03;
+	std::vector<HWND> target_vector;
+	target_vector.reserve(TARGETS_PER_ROW * NUM_ROWS);
+
+	int h_margin = 0;		// On either side
+	int v_margin = 100;		// On top
+	int target_w = (meta.screenWidth - 2*h_margin) / TARGETS_PER_ROW;
+	int target_h = meta.screenHeight * PERCENTAGE_OF_SCREEN_HEIGHT;
+
+	for (int i = 0; i < TARGETS_PER_ROW; i++) {
+		for (int j = 0; j < NUM_ROWS; j++) {
+			HWND target = createWindow(L"Target", h_margin + target_w * i, v_margin + target_h * j, target_w, target_h);
+			target_vector.push_back(target);
+		}
+	}
+
+	return target_vector;
+}
+
 int main()
 {
 	MetaData meta = get_metadata();
 	Ball ball = createBall(std::make_pair(40, meta.screenHeight/3), std::make_pair(1000, 500));
 	HWND paddle = createWindow(L"Paddle", meta.screenWidth / 2, meta.screenHeight * 9 / 10, 500, 100);
+	std::vector<HWND> target_array = create_targets(meta);
 
-	int i = 0;
 	while (true)
 	{
-		update_ball_velocity(&ball, &paddle, meta);
+		update_ball_velocity(&ball, &paddle, target_array, meta);
 		update_ball_position(&ball);
 
 		//change window border
